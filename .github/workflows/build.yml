@@ -22,11 +22,20 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
+      - name: Check project ZIP
+        run: |
+          if [ ! -f Caption-Keyboard-Android-Project.zip ]; then
+            echo "ERROR: Project ZIP not found!"
+            exit 1
+          fi
 
       - name: Extract project
         run: |
@@ -35,11 +44,16 @@ jobs:
 
       - name: Find Android project
         run: |
-          FILE=$(find android-project -name settings.gradle.kts -o -name settings.gradle | head -n 1)
+          FILE=$(find android-project -type f \( \
+            -name settings.gradle.kts -o \
+            -name settings.gradle \
+          \) -print -quit)
+
           if [ -z "$FILE" ]; then
-            echo "Gradle settings file not found"
+            echo "ERROR: Gradle settings file not found"
             exit 1
           fi
+
           echo "PROJECT_DIR=$(dirname "$FILE")" >> "$GITHUB_ENV"
 
       - name: Fix Java and Kotlin targets
@@ -50,6 +64,7 @@ jobs:
                   sourceCompatibility = '17'
                   targetCompatibility = '17'
               }
+
               tasks.matching {
                   it.name.toLowerCase().contains('compile') &&
                   it.name.toLowerCase().contains('kotlin')
@@ -60,11 +75,26 @@ jobs:
           EOF
 
       - name: Build APK
-        run: gradle -I fix.gradle -p "$PROJECT_DIR" assembleDebug
+        run: |
+          gradle -I fix.gradle -p "$PROJECT_DIR" assembleDebug
+
+      - name: Verify APK
+        run: |
+          APK=$(find "$PROJECT_DIR" -type f \
+            -path "*/build/outputs/apk/debug/*.apk" \
+            -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not generated"
+            exit 1
+          fi
+
+          echo "APK successfully generated: $APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Caption-Keyboard-APK
-          path: android-project/**/app/build/outputs/apk/debug/*.apk
+          path: "**/build/outputs/apk/debug/*.apk"
           if-no-files-found: error
+          retention-days: 14
