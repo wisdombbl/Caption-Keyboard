@@ -36,16 +36,15 @@ jobs:
         id: project
         shell: bash
         run: |
-          ZIP=$(find . -maxdepth 2 -type f \
+          ZIP=$(find . -maxdepth 3 -type f \
             -name 'Caption-Keyboard-Android-Project.zip' \
             -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "ERROR: Android project ZIP not found"
+            echo "ERROR: Project ZIP not found"
             exit 1
           fi
 
-          echo "Found: $ZIP"
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
 
       - name: Extract Android project
@@ -64,8 +63,7 @@ jobs:
             -print -quit)
 
           if [ -z "$FILE" ]; then
-            echo "ERROR: settings.gradle not found"
-            find android-project -maxdepth 4 -type f
+            echo "ERROR: Gradle settings file not found"
             exit 1
           fi
 
@@ -73,15 +71,35 @@ jobs:
 
           if [ ! -f "$PROJECT_DIR/build.gradle" ] && \
              [ ! -f "$PROJECT_DIR/build.gradle.kts" ]; then
-            echo "ERROR: Root Gradle build file not found"
+            echo "ERROR: Root build.gradle not found"
             exit 1
           fi
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-          echo "Android project: $PROJECT_DIR"
+      - name: Align Java compilation target
+        shell: bash
+        run: |
+          APP="$PROJECT_DIR/app/build.gradle.kts"
 
-      - name: Build debug APK
+          if [ ! -f "$APP" ]; then
+            echo "ERROR: app/build.gradle.kts not found"
+            exit 1
+          fi
+
+          cat >> "$APP" <<'EOF'
+
+          android {
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+          }
+          EOF
+        env:
+          PROJECT_DIR: ${{ steps.android.outputs.project_dir }}
+
+      - name: Build APK
         run: |
           gradle \
             -p "${{ steps.android.outputs.project_dir }}" \
@@ -102,15 +120,13 @@ jobs:
             exit 1
           fi
 
-          echo "APK generated successfully!"
-          echo "apk=$APK" >> "$GITHUB_OUTPUT"
-
+          echo "APK=$APK" >> "$GITHUB_OUTPUT"
           ls -lh "$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Caption-Keyboard-APK
-          path: android-project/**/build/outputs/apk/debug/*.apk
+          path: ${{ steps.verify.outputs.APK }}
           if-no-files-found: error
           retention-days: 14
